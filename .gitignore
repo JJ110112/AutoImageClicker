@@ -1,0 +1,15 @@
+# Python & PyInstaller
+__pycache__/
+*.py[cod]
+*$py.class
+build/
+dist/
+*.spec
+
+# Application Data
+targets/
+*.zip
+
+# OS Files
+.DS_Store
+Thumbs.db
