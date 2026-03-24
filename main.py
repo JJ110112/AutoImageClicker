@@ -70,8 +70,8 @@ class AutoClickerApp(ctk.CTk):
         window_height = 680
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
-        pos_x = int((screen_width - window_width) / 2)
-        pos_y = int((screen_height - window_height) / 2)
+        pos_x = 20
+        pos_y = screen_height - window_height - 60
         
         self.geometry(f"{window_width}x{window_height}+{pos_x}+{pos_y}")
         
