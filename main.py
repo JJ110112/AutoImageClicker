@@ -1,4 +1,5 @@
 import customtkinter as ctk
+import tkinter as tk
 import pyautogui
 import keyboard
 import threading
@@ -24,7 +25,7 @@ class SnippingOverlay(ctk.CTkToplevel):
         self.overrideredirect(True)
         self.config(cursor="cross")
         
-        self.canvas = ctk.CTkCanvas(self, bg='black', highlightthickness=0)
+        self.canvas = tk.Canvas(self, bg='black', highlightthickness=0)
         self.canvas.pack(fill='both', expand=True)
         
         self.start_x = 0
@@ -50,10 +51,11 @@ class SnippingOverlay(ctk.CTkToplevel):
         x2 = max(self.start_x, event.x)
         y2 = max(self.start_y, event.y)
         
+        parent = self.master
         self.destroy()
         if x2 - x1 > 5 and y2 - y1 > 5:
             # Short delay to allow overlay to close before capturing under it
-            self.after(200, lambda: self.capture_region(x1, y1, x2 - x1, y2 - y1))
+            parent.after(200, lambda: self.capture_region(x1, y1, x2 - x1, y2 - y1))
 
     def capture_region(self, x, y, w, h):
         img = pyautogui.screenshot(region=(x, y, w, h))
@@ -269,7 +271,11 @@ class AutoClickerApp(ctk.CTk):
             try:
                 self.clear_targets()
                 with zipfile.ZipFile(filepath, 'r') as zf:
-                    zf.extractall(self.targets_dir)
+                    for member in zf.namelist():
+                        basename = os.path.basename(member)
+                        if not basename or basename != member:
+                            continue
+                        zf.extract(member, self.targets_dir)
                 self.load_target_images()
                 self.lbl_status.configure(text=f"Loaded {os.path.basename(filepath)}", text_color="green")
             except Exception as e:
@@ -295,11 +301,11 @@ class AutoClickerApp(ctk.CTk):
         if not self.target_images:
             self.lbl_status.configure(text="Please capture at least one target image.", text_color="red")
             return
-            
+
         conf = float(self.conf_slider.get())
         found = False
-        try:
-            for img in self.target_images:
+        for img in self.target_images:
+            try:
                 loc = pyautogui.locateOnScreen(img, confidence=conf)
                 if loc:
                     center = pyautogui.center(loc)
@@ -307,13 +313,14 @@ class AutoClickerApp(ctk.CTk):
                     self.lbl_status.configure(text=f"Found match at X:{center.x} Y:{center.y}", text_color="green")
                     found = True
                     break
-                    
-            if not found:
-                self.lbl_status.configure(text="No targets found on current screen.", text_color="orange")
-        except getattr(pyautogui, 'ImageNotFoundException', Exception): # Fallback if library version differs
-             self.lbl_status.configure(text="No targets found on current screen.", text_color="orange")
-        except Exception as e:
-             self.lbl_status.configure(text=f"Error matching: {str(e)}", text_color="red")
+            except getattr(pyautogui, 'ImageNotFoundException', Exception):
+                continue
+            except Exception as e:
+                self.lbl_status.configure(text=f"Error matching: {str(e)}", text_color="red")
+                return
+
+        if not found:
+            self.lbl_status.configure(text="No targets found on current screen.", text_color="orange")
 
     def toggle_start(self):
         if self.running:
@@ -338,6 +345,7 @@ class AutoClickerApp(ctk.CTk):
         self.running = True
         self.btn_start.configure(text="Stop [Ctrl+Shift+Q]", fg_color="red", hover_color="darkred")
         self.lbl_status.configure(text="Status: RUNNING", text_color="green")
+        self.title("[RUNNING] Auto Image Clicker - Multi Targets")
         
         self.iconify()
         
@@ -351,20 +359,25 @@ class AutoClickerApp(ctk.CTk):
         self.running = False
         self.btn_start.configure(text="Start [Ctrl+Shift+P]", fg_color="green", hover_color="darkgreen")
         self.lbl_status.configure(text="Status: Stopped", text_color="gray")
+        self.title("Auto Image Clicker - Multi Targets")
         
         self.deiconify()
 
     def auto_loop(self):
         while self.running:
+            # Add a sleep interval to protect CPU
+            time.sleep(0.1)
+
             try:
-                # Add a sleep interval to protect CPU
-                time.sleep(0.1)
-                
+                # Read UI values safely on main thread via tkinter variable
                 conf = float(self.conf_slider.get())
-                action = self.action_var.get()
+                action = str(self.action_var.get())
                 delay = float(self.delay_slider.get())
-                
-                for img in self.target_images:
+            except Exception:
+                continue
+
+            for idx, img in enumerate(self.target_images):
+                try:
                     loc = pyautogui.locateOnScreen(img, confidence=conf)
                     if loc:
                         center = pyautogui.center(loc)
@@ -376,17 +389,16 @@ class AutoClickerApp(ctk.CTk):
                             pyautogui.doubleClick(center.x, center.y)
                         elif action == "Move Only":
                             pyautogui.moveTo(center.x, center.y)
-                        
+
                         # Update status safely on main thread
-                        self.after(0, lambda cx=center.x, cy=center.y: self.lbl_status.configure(text=f"Match at X:{cx} Y:{cy}", text_color="green"))
-                        
+                        self.after(0, lambda cx=center.x, cy=center.y, i=idx: self.lbl_status.configure(text=f"#{i+1} Match at X:{cx} Y:{cy}", text_color="green"))
+
                         # Prevent instant repeated clicking
                         time.sleep(delay)
-                        break  # Successfully acted, loop from start again
-            except getattr(pyautogui, 'ImageNotFoundException', Exception):
-                pass
-            except Exception as e:
-                print("Error in auto_loop:", e)
+                except getattr(pyautogui, 'ImageNotFoundException', Exception):
+                    continue
+                except Exception as e:
+                    print("Error in auto_loop:", e)
 
 if __name__ == "__main__":
     app = AutoClickerApp()

@@ -24,9 +24,10 @@ cmd = [
     "--noconsole",
     "--onefile",
     "--name", "AutoImageClicker",
-    add_data_arg,
     "main.py"
 ]
+if add_data_arg:
+    cmd.insert(-1, add_data_arg)
 
 subprocess.run(cmd)
 print("Build complete! Check the 'dist' folder.")
