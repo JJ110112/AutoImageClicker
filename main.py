@@ -146,10 +146,13 @@ class AutoClickerApp(ctk.CTk):
         pf.grid(row=3, column=0, padx=10, pady=3, sticky="ew")
         pf.grid_columnconfigure(0, weight=1)
         pf.grid_columnconfigure(1, weight=1)
-        ctk.CTkButton(pf, text="💾 Save Profile", fg_color="#0052cc", hover_color="#003d99",
+        pf.grid_columnconfigure(2, weight=1)
+        ctk.CTkButton(pf, text="💾 Save", fg_color="#0052cc", hover_color="#003d99",
                       command=self.save_profile).grid(row=0, column=0, padx=(0, 3), sticky="ew")
-        ctk.CTkButton(pf, text="📂 Load Profile", fg_color="#0052cc", hover_color="#003d99",
-                      command=self.load_profile).grid(row=0, column=1, padx=(3, 0), sticky="ew")
+        ctk.CTkButton(pf, text="📂 Load", fg_color="#0052cc", hover_color="#003d99",
+                      command=self.load_profile).grid(row=0, column=1, padx=3, sticky="ew")
+        ctk.CTkButton(pf, text="➕ Append", fg_color="#28a745", hover_color="#218838",
+                      command=self.append_profile).grid(row=0, column=2, padx=(3, 0), sticky="ew")
 
         # ── Hotkeys / Start / Status ──────────────────────────────────
         ctk.CTkLabel(
@@ -222,22 +225,47 @@ class AutoClickerApp(ctk.CTk):
                     pass
 
     def _renumber_files(self):
-        """Rename on-disk files to match current step indices after a delete."""
-        for step_idx, step in enumerate(self.steps):
+        """Rename on-disk files to match current step indices safely."""
+        # Phase 1: temporary rename to avoid collision
+        for step in self.steps:
             for img in step:
                 old_path = getattr(img, 'filepath', None)
-                if not old_path or not os.path.exists(old_path):
-                    continue
-                fname = os.path.basename(old_path)
-                m = re.match(r'^s(\d+)_(\d+)\.png$', fname)
-                if m and int(m.group(1)) != step_idx:
-                    new_fname = f"s{step_idx:02d}_{m.group(2)}.png"
+                if old_path and os.path.exists(old_path):
+                    tmp = old_path + f".tmp_{int(time.time() * 1000)}"
+                    try:
+                        os.rename(old_path, tmp)
+                        img.filepath = tmp
+                    except Exception:
+                        pass
+        
+        # Phase 2: rename to sorted new names
+        for step_idx, step in enumerate(self.steps):
+            base_timestamp = int(time.time() * 1000)
+            for img_idx, img in enumerate(step):
+                old_path = getattr(img, 'filepath', None)
+                if old_path and os.path.exists(old_path):
+                    new_fname = f"s{step_idx:02d}_{base_timestamp + img_idx}.png"
                     new_path = os.path.join(self.targets_dir, new_fname)
                     try:
                         os.rename(old_path, new_path)
                         img.filepath = new_path
                     except Exception:
                         pass
+
+    def move_step(self, step_idx, direction):
+        new_idx = step_idx + direction
+        if 0 <= new_idx < len(self.steps):
+            self.steps[step_idx], self.steps[new_idx] = self.steps[new_idx], self.steps[step_idx]
+            self._renumber_files()
+            self.rebuild_steps_ui()
+
+    def move_image(self, step_idx, img_idx, direction):
+        step = self.steps[step_idx]
+        new_idx = img_idx + direction
+        if 0 <= new_idx < len(step):
+            step[img_idx], step[new_idx] = step[new_idx], step[img_idx]
+            self._renumber_files()
+            self.rebuild_steps_ui()
 
     # ── Capture ───────────────────────────────────────────────────────
     def start_capture(self, step_idx):
@@ -280,11 +308,15 @@ class AutoClickerApp(ctk.CTk):
 
             ctk.CTkLabel(hdr, text=f"Step {step_idx + 1}",
                          font=("Arial", 13, "bold")).grid(row=0, column=0, sticky="w", padx=5)
+            ctk.CTkButton(hdr, text="▲", width=26, height=26, fg_color="#555",
+                          command=lambda i=step_idx: self.move_step(i, -1)).grid(row=0, column=1, padx=2)
+            ctk.CTkButton(hdr, text="▼", width=26, height=26, fg_color="#555",
+                          command=lambda i=step_idx: self.move_step(i, 1)).grid(row=0, column=2, padx=2)
             ctk.CTkButton(hdr, text="📸 Capture", width=85, height=26,
-                          command=lambda i=step_idx: self.start_capture(i)).grid(row=0, column=1, padx=3)
+                          command=lambda i=step_idx: self.start_capture(i)).grid(row=0, column=3, padx=3)
             ctk.CTkButton(hdr, text="🗑️", width=32, height=26,
                           fg_color="red", hover_color="darkred",
-                          command=lambda i=step_idx: self.delete_step(i)).grid(row=0, column=2, padx=(0, 5))
+                          command=lambda i=step_idx: self.delete_step(i)).grid(row=0, column=4, padx=(0, 5))
 
             # Image thumbnail row
             img_scroll = ctk.CTkScrollableFrame(step_frame, height=90,
@@ -307,6 +339,14 @@ class AutoClickerApp(ctk.CTk):
                     lbl = ctk.CTkLabel(img_frame, image=ctk_img, text="")
                     lbl.image = ctk_img  # type: ignore
                     lbl.grid(row=0, column=0)
+
+                    actions_frame = ctk.CTkFrame(img_frame, fg_color="transparent")
+                    actions_frame.grid(row=1, column=0, pady=(2, 0))
+
+                    ctk.CTkButton(actions_frame, text="◀", width=20, height=20, fg_color="#555", font=("Arial", 10),
+                                  command=lambda si=step_idx, ii=img_idx: self.move_image(si, ii, -1)).pack(side="left", padx=1)
+                    ctk.CTkButton(actions_frame, text="▶", width=20, height=20, fg_color="#555", font=("Arial", 10),
+                                  command=lambda si=step_idx, ii=img_idx: self.move_image(si, ii, 1)).pack(side="left", padx=1)
 
                     ctk.CTkButton(
                         img_frame, text="✕", width=18, height=18,
@@ -391,6 +431,47 @@ class AutoClickerApp(ctk.CTk):
                 self.lbl_status.configure(text=f"Loaded: {os.path.basename(filepath)}", text_color="green")
             except Exception as e:
                 self.lbl_status.configure(text=f"Load error: {e}", text_color="red")
+
+    def append_profile(self):
+        filepath = ctk.filedialog.askopenfilename(  # type: ignore
+            filetypes=[("Scenario Zip", "*.zip")], title="Append Profile")
+        if filepath:
+            try:
+                if len(self.steps) == 1 and not self.steps[0]:
+                    base_step_offset = 0
+                else:
+                    if not self.steps[-1]:
+                        base_step_offset = len(self.steps) - 1
+                    else:
+                        base_step_offset = len(self.steps)
+
+                with zipfile.ZipFile(filepath, 'r') as zf:
+                    for member in zf.namelist():
+                        basename = os.path.basename(member)
+                        if not basename or basename != member:
+                            continue
+                        
+                        m = re.match(r'^s(\d+)_(\d+)\.png$', basename)
+                        if m:
+                            orig_step = int(m.group(1))
+                            timestamp = m.group(2)
+                            new_step = base_step_offset + orig_step
+                            new_filename = f"s{new_step:02d}_{timestamp}.png"
+                            
+                            while os.path.exists(os.path.join(self.targets_dir, new_filename)):
+                                timestamp = str(int(time.time() * 1000))
+                                new_filename = f"s{new_step:02d}_{timestamp}.png"
+                                time.sleep(0.001)
+
+                            extracted_path = os.path.join(self.targets_dir, new_filename)
+                            with zf.open(member) as source, open(extracted_path, "wb") as target:
+                                target.write(source.read())
+
+                self.load_target_images()
+                self.rebuild_steps_ui()
+                self.lbl_status.configure(text=f"Appended: {os.path.basename(filepath)}", text_color="green")
+            except Exception as e:
+                self.lbl_status.configure(text=f"Append error: {e}", text_color="red")
 
     # ── Start / Stop ──────────────────────────────────────────────────
     def toggle_start(self):
