@@ -177,19 +177,19 @@ class AutoClickerApp(ctk.CTk):
         self.interval_slider.grid(row=8, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
         ToolTip(self.interval_slider, "每次搜尋圖片的間隔時間\n數值越小搜尋越頻繁，但較耗資源")
 
-        self.lbl_scroll = ctk.CTkLabel(ctrl, text="No-match scroll amt: 0")
+        self.lbl_scroll = ctk.CTkLabel(ctrl, text="找不到圖時捲動: 關閉")
         self.lbl_scroll.grid(row=9, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
         self.scroll_slider = ctk.CTkSlider(ctrl, from_=-1000, to=1000, command=self.update_scroll_lbl)
         self.scroll_slider.set(0)
         self.scroll_slider.grid(row=10, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
-        ToolTip(self.scroll_slider, "未匹配時的捲動量\n找不到圖片時，會移動到上次點擊的 X 座標\n並在該位置捲動視窗來尋找按鈕\n正值向上捲、負值向下捲，0 為不捲動")
+        ToolTip(self.scroll_slider, "找不到圖片時，移動到上次點擊的 X 座標\n並在該位置捲動視窗來尋找按鈕\n← 左邊=往上捲 | 右邊=往下捲 →\n置中為關閉")
 
-        self.lbl_scroll_before = ctk.CTkLabel(ctrl, text="Scroll before search: 0")
+        self.lbl_scroll_before = ctk.CTkLabel(ctrl, text="搜尋前捲動: 關閉")
         self.lbl_scroll_before.grid(row=11, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
         self.scroll_before_slider = ctk.CTkSlider(ctrl, from_=-1000, to=1000, command=self.update_scroll_before_lbl)
         self.scroll_before_slider.set(0)
         self.scroll_before_slider.grid(row=12, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
-        ToolTip(self.scroll_before_slider, "每次搜尋前先捲動視窗\n在開始比對圖片之前，先捲動指定量\n正值向上捲、負值向下捲，0 為不捲動")
+        ToolTip(self.scroll_before_slider, "每次搜尋圖片之前，先捲動視窗\n← 左邊=往上捲 | 右邊=往下捲 →\n置中為關閉")
 
         # ── Profile Buttons ───────────────────────────────────────────
         pf = ctk.CTkFrame(self, fg_color="transparent")
@@ -294,12 +294,21 @@ class AutoClickerApp(ctk.CTk):
         self.lbl_interval.configure(text=f"Check interval: {float(value):.2f}s")
         self.save_settings()
 
+    @staticmethod
+    def _scroll_display(val):
+        v = int(float(val))
+        if v == 0:
+            return "關閉"
+        if v > 0:
+            return f"↑ 往上捲 {v}"
+        return f"↓ 往下捲 {abs(v)}"
+
     def update_scroll_lbl(self, value):
-        self.lbl_scroll.configure(text=f"No-match scroll amt: {int(float(value))}")
+        self.lbl_scroll.configure(text=f"找不到圖時捲動: {self._scroll_display(value)}")
         self.save_settings()
 
     def update_scroll_before_lbl(self, value):
-        self.lbl_scroll_before.configure(text=f"Scroll before search: {int(float(value))}")
+        self.lbl_scroll_before.configure(text=f"搜尋前捲動: {self._scroll_display(value)}")
         self.save_settings()
 
     # ── Step management ───────────────────────────────────────────────
