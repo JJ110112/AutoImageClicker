@@ -218,23 +218,23 @@ class AutoClickerApp(ctk.CTk):
 
         # ── Hotkeys / Start / Status ──────────────────────────────────
         ctk.CTkLabel(
-            self, text="[Ctrl+Shift+P] Start  |  [Ctrl+Shift+Q] Stop",
+            self, text="[Ctrl+Shift+F1] Start  |  [Ctrl+Shift+F2] Stop",
             font=("Arial", 12, "bold")
         ).grid(row=5, column=0, pady=5)
 
         self.btn_start = ctk.CTkButton(
-            self, text="▶ Start [Ctrl+Shift+P]",
+            self, text="▶ Start [Ctrl+Shift+F1]",
             fg_color="green", hover_color="darkgreen", height=40,
             command=self.toggle_start
         )
         self.btn_start.grid(row=6, column=0, padx=10, pady=5, sticky="ew")
-        ToolTip(self.btn_start, "開始/停止自動辨識點擊\n快捷鍵：Ctrl+Shift+P 開始、Ctrl+Shift+Q 停止\n啟動後視窗會自動最小化")
+        ToolTip(self.btn_start, "開始/停止自動辨識點擊\n快捷鍵：Ctrl+Shift+F1 開始、Ctrl+Shift+F2 停止\n啟動後視窗會自動最小化")
 
         self.lbl_status = ctk.CTkLabel(self, text="Status: Ready", text_color="gray")
         self.lbl_status.grid(row=7, column=0, padx=10, pady=(3, 10))
 
-        keyboard.add_hotkey("ctrl+shift+p", lambda: self.after(0, self.start_auto))
-        keyboard.add_hotkey("ctrl+shift+q", lambda: self.after(0, self.stop_auto))
+        keyboard.add_hotkey("ctrl+shift+f1", lambda: self.after(0, self.start_auto))
+        keyboard.add_hotkey("ctrl+shift+f2", lambda: self.after(0, self.stop_auto))
 
         self.load_settings()
         self.load_target_images()
@@ -632,7 +632,7 @@ class AutoClickerApp(ctk.CTk):
             self.lbl_status.configure(text="Please capture at least one target.", text_color="red")
             return
         self.running = True
-        self.btn_start.configure(text="⏹ Stop [Ctrl+Shift+Q]", fg_color="red", hover_color="darkred")
+        self.btn_start.configure(text="⏹ Stop [Ctrl+Shift+F2]", fg_color="red", hover_color="darkred")
         self.lbl_status.configure(text="Status: RUNNING — Step 1", text_color="green")
         self.title("[RUNNING] Auto Image Clicker")
         self.iconify()
@@ -643,7 +643,7 @@ class AutoClickerApp(ctk.CTk):
         if not self.running:
             return
         self.running = False
-        self.btn_start.configure(text="▶ Start [Ctrl+Shift+P]", fg_color="green", hover_color="darkgreen")
+        self.btn_start.configure(text="▶ Start [Ctrl+Shift+F1]", fg_color="green", hover_color="darkgreen")
         self.lbl_status.configure(text="Status: Stopped", text_color="gray")
         self.title("Auto Image Clicker - Hierarchical")
         self.deiconify()
