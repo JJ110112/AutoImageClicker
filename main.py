@@ -15,6 +15,36 @@ ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
 
 
+class ToolTip:
+    """Hover tooltip for any tkinter/ctk widget."""
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        widget.bind("<Enter>", self._show)
+        widget.bind("<Leave>", self._hide)
+
+    def _show(self, event=None):
+        if self.tip_window:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        tw.attributes("-topmost", True)
+        label = tk.Label(tw, text=self.text, justify="left",
+                         background="#333", foreground="#eee",
+                         relief="solid", borderwidth=1,
+                         font=("Microsoft JhengHei", 10), padx=6, pady=4)
+        label.pack()
+
+    def _hide(self, event=None):
+        if self.tip_window:
+            self.tip_window.destroy()
+            self.tip_window = None
+
+
 class SnippingOverlay(ctk.CTkToplevel):
     def __init__(self, parent, callback):
         super().__init__(parent)  # type: ignore
@@ -103,6 +133,7 @@ class AutoClickerApp(ctk.CTk):
             command=self.add_step
         )
         self.btn_add_step.grid(row=1, column=0, padx=10, pady=3, sticky="ew")
+        ToolTip(self.btn_add_step, "新增下一個辨識步驟\n程式會依序比對每個步驟的圖片")
 
         # ── Controls ─────────────────────────────────────────────────
         ctrl = ctk.CTkFrame(self)
@@ -111,46 +142,54 @@ class AutoClickerApp(ctk.CTk):
 
         ctk.CTkLabel(ctrl, text="Action:").grid(row=0, column=0, padx=10, pady=6, sticky="w")
         self.action_var = ctk.StringVar(value="Left Click")
-        ctk.CTkOptionMenu(
+        self.action_menu = ctk.CTkOptionMenu(
             ctrl, values=["Left Click", "Right Click", "Double Click", "Move Only"],
             variable=self.action_var, command=lambda _: self.save_settings()
-        ).grid(row=0, column=1, padx=10, pady=6, sticky="ew")
+        )
+        self.action_menu.grid(row=0, column=1, padx=10, pady=6, sticky="ew")
+        ToolTip(self.action_menu, "選擇找到圖片後的動作\nLeft Click: 左鍵點擊\nRight Click: 右鍵點擊\nDouble Click: 雙擊\nMove Only: 僅移動滑鼠不點擊")
 
         self.lbl_conf = ctk.CTkLabel(ctrl, text="Confidence: 100%")
         self.lbl_conf.grid(row=1, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
         self.conf_slider = ctk.CTkSlider(ctrl, from_=0.1, to=1.0, command=self.update_conf_lbl)
         self.conf_slider.set(1.0)
         self.conf_slider.grid(row=2, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
+        ToolTip(self.conf_slider, "圖片比對信心度\n數值越高要求越精確，100% 表示完全匹配")
 
         self.lbl_min_conf = ctk.CTkLabel(ctrl, text="Min Confidence (fallback): 90%")
         self.lbl_min_conf.grid(row=3, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
         self.min_conf_slider = ctk.CTkSlider(ctrl, from_=0.1, to=1.0, command=self.update_min_conf_lbl)
         self.min_conf_slider.set(0.90)
         self.min_conf_slider.grid(row=4, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
+        ToolTip(self.min_conf_slider, "最低信心度（遞減重試）\n找不到時會從上方信心度每次降低 5% 重試\n直到此最低值為止")
 
         self.lbl_delay = ctk.CTkLabel(ctrl, text="Delay after click: 1.5s")
         self.lbl_delay.grid(row=5, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
         self.delay_slider = ctk.CTkSlider(ctrl, from_=0.0, to=5.0, command=self.update_delay_lbl)
         self.delay_slider.set(1.5)
         self.delay_slider.grid(row=6, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
+        ToolTip(self.delay_slider, "點擊成功後的等待時間\n讓畫面有時間載入再進行下一步")
 
         self.lbl_interval = ctk.CTkLabel(ctrl, text="Check interval: 2.00s")
         self.lbl_interval.grid(row=7, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
         self.interval_slider = ctk.CTkSlider(ctrl, from_=0.0, to=2.0, command=self.update_interval_lbl)
         self.interval_slider.set(2.0)
         self.interval_slider.grid(row=8, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
+        ToolTip(self.interval_slider, "每次搜尋圖片的間隔時間\n數值越小搜尋越頻繁，但較耗資源")
 
         self.lbl_scroll = ctk.CTkLabel(ctrl, text="No-match scroll amt: 0")
         self.lbl_scroll.grid(row=9, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
         self.scroll_slider = ctk.CTkSlider(ctrl, from_=-1000, to=1000, command=self.update_scroll_lbl)
         self.scroll_slider.set(0)
         self.scroll_slider.grid(row=10, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
+        ToolTip(self.scroll_slider, "未匹配時的捲動量\n找不到圖片時，會移動到上次點擊的 X 座標\n並在該位置捲動視窗來尋找按鈕\n正值向上捲、負值向下捲，0 為不捲動")
 
         self.lbl_scroll_before = ctk.CTkLabel(ctrl, text="Scroll before search: 0")
         self.lbl_scroll_before.grid(row=11, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
         self.scroll_before_slider = ctk.CTkSlider(ctrl, from_=-1000, to=1000, command=self.update_scroll_before_lbl)
         self.scroll_before_slider.set(0)
         self.scroll_before_slider.grid(row=12, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
+        ToolTip(self.scroll_before_slider, "每次搜尋前先捲動視窗\n在開始比對圖片之前，先捲動指定量\n正值向上捲、負值向下捲，0 為不捲動")
 
         # ── Profile Buttons ───────────────────────────────────────────
         pf = ctk.CTkFrame(self, fg_color="transparent")
@@ -158,12 +197,20 @@ class AutoClickerApp(ctk.CTk):
         pf.grid_columnconfigure(0, weight=1)
         pf.grid_columnconfigure(1, weight=1)
         pf.grid_columnconfigure(2, weight=1)
-        ctk.CTkButton(pf, text="💾 Save", fg_color="#0052cc", hover_color="#003d99",
-                      command=self.save_profile).grid(row=0, column=0, padx=(0, 3), sticky="ew")
-        ctk.CTkButton(pf, text="📂 Load", fg_color="#0052cc", hover_color="#003d99",
-                      command=self.load_profile).grid(row=0, column=1, padx=3, sticky="ew")
-        ctk.CTkButton(pf, text="➕ Append", fg_color="#28a745", hover_color="#218838",
-                      command=self.append_profile).grid(row=0, column=2, padx=(3, 0), sticky="ew")
+        btn_save = ctk.CTkButton(pf, text="💾 Save", fg_color="#0052cc", hover_color="#003d99",
+                      command=self.save_profile)
+        btn_save.grid(row=0, column=0, padx=(0, 3), sticky="ew")
+        ToolTip(btn_save, "儲存目前所有步驟為設定檔（.zip）\n方便之後快速載入相同流程")
+
+        btn_load = ctk.CTkButton(pf, text="📂 Load", fg_color="#0052cc", hover_color="#003d99",
+                      command=self.load_profile)
+        btn_load.grid(row=0, column=1, padx=3, sticky="ew")
+        ToolTip(btn_load, "載入設定檔（.zip）\n會清除目前的步驟，替換為檔案中的內容")
+
+        btn_append = ctk.CTkButton(pf, text="➕ Append", fg_color="#28a745", hover_color="#218838",
+                      command=self.append_profile)
+        btn_append.grid(row=0, column=2, padx=(3, 0), sticky="ew")
+        ToolTip(btn_append, "附加設定檔（.zip）\n將檔案中的步驟接在目前步驟之後\n可串聯多個設定檔形成完整流程")
 
         # ── Profile Flow Indicator ────────────────────────────────────
         self.lbl_flow = ctk.CTkLabel(self, text="", text_color="#4fc3f7",
@@ -181,6 +228,7 @@ class AutoClickerApp(ctk.CTk):
             command=self.toggle_start
         )
         self.btn_start.grid(row=6, column=0, padx=10, pady=5, sticky="ew")
+        ToolTip(self.btn_start, "開始/停止自動辨識點擊\n快捷鍵：Ctrl+Shift+P 開始、Ctrl+Shift+Q 停止\n啟動後視窗會自動最小化")
 
         self.lbl_status = ctk.CTkLabel(self, text="Status: Ready", text_color="gray")
         self.lbl_status.grid(row=7, column=0, padx=10, pady=(3, 10))
@@ -370,15 +418,26 @@ class AutoClickerApp(ctk.CTk):
 
             ctk.CTkLabel(hdr, text=f"Step {step_idx + 1}",
                          font=("Arial", 13, "bold")).grid(row=0, column=0, sticky="w", padx=5)
-            ctk.CTkButton(hdr, text="▲", width=26, height=26, fg_color="#555",
-                          command=lambda i=step_idx: self.move_step(i, -1)).grid(row=0, column=1, padx=2)
-            ctk.CTkButton(hdr, text="▼", width=26, height=26, fg_color="#555",
-                          command=lambda i=step_idx: self.move_step(i, 1)).grid(row=0, column=2, padx=2)
-            ctk.CTkButton(hdr, text="📸 Capture", width=85, height=26,
-                          command=lambda i=step_idx: self.start_capture(i)).grid(row=0, column=3, padx=3)
-            ctk.CTkButton(hdr, text="🗑️", width=32, height=26,
+            btn_up = ctk.CTkButton(hdr, text="▲", width=26, height=26, fg_color="#555",
+                          command=lambda i=step_idx: self.move_step(i, -1))
+            btn_up.grid(row=0, column=1, padx=2)
+            ToolTip(btn_up, "將此步驟往上移動")
+
+            btn_down = ctk.CTkButton(hdr, text="▼", width=26, height=26, fg_color="#555",
+                          command=lambda i=step_idx: self.move_step(i, 1))
+            btn_down.grid(row=0, column=2, padx=2)
+            ToolTip(btn_down, "將此步驟往下移動")
+
+            btn_capture = ctk.CTkButton(hdr, text="📸 Capture", width=85, height=26,
+                          command=lambda i=step_idx: self.start_capture(i))
+            btn_capture.grid(row=0, column=3, padx=3)
+            ToolTip(btn_capture, "截取螢幕上的目標圖片\n拖曳選取要辨識的按鈕或圖案")
+
+            btn_del = ctk.CTkButton(hdr, text="🗑️", width=32, height=26,
                           fg_color="red", hover_color="darkred",
-                          command=lambda i=step_idx: self.delete_step(i)).grid(row=0, column=4, padx=(0, 5))
+                          command=lambda i=step_idx: self.delete_step(i))
+            btn_del.grid(row=0, column=4, padx=(0, 5))
+            ToolTip(btn_del, "刪除此步驟及其所有圖片")
 
             # Image thumbnail row
             img_scroll = ctk.CTkScrollableFrame(step_frame, height=90,
