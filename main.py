@@ -665,11 +665,19 @@ class AutoClickerApp(ctk.CTk):
                 time.sleep(0.1)
                 continue
 
-            time.sleep(interval)
+            # Sleep in small chunks so stop responds quickly
+            elapsed = 0.0
+            while elapsed < interval and self.running:
+                time.sleep(0.1)
+                elapsed += 0.1
+            if not self.running:
+                break
 
             if scroll_before_amt != 0:
                 pyautogui.scroll(scroll_before_amt)
                 time.sleep(0.3)
+                if not self.running:
+                    break
 
             # Ensure min_conf <= conf
             min_conf = min(min_conf, conf)
@@ -730,7 +738,7 @@ class AutoClickerApp(ctk.CTk):
                     if try_conf < min_conf:
                         break
 
-            if not matched and scroll_amt != 0 and self.last_click_x is not None:
+            if not matched and self.running and scroll_amt != 0 and self.last_click_x is not None:
                 screen_center_y = pyautogui.size().height // 2
                 pyautogui.moveTo(self.last_click_x, screen_center_y)
                 pyautogui.scroll(scroll_amt)
