@@ -300,8 +300,8 @@ class AutoClickerApp(ctk.CTk):
         if v == 0:
             return "關閉"
         if v > 0:
-            return f"↑ 往上捲 {v}"
-        return f"↓ 往下捲 {abs(v)}"
+            return f"↓ 往下捲 {v}"
+        return f"↑ 往上捲 {abs(v)}"
 
     def update_scroll_lbl(self, value):
         self.lbl_scroll.configure(text=f"找不到圖時捲動: {self._scroll_display(value)}")
