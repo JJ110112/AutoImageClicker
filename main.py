@@ -9,6 +9,7 @@ import re
 from PIL import Image
 import zipfile
 import typing
+import json
 
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
@@ -69,20 +70,24 @@ class AutoClickerApp(ctk.CTk):
 
         self.update_idletasks()
         window_width = 490
-        window_height = 910
+        window_height = 980
+        screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
-        pos_x = 20
-        pos_y = 20  # Stay at the top instead of aligning to bottom
+        pos_x = 0
+        pos_y = 400
         self.geometry(f"{window_width}x{window_height}+{pos_x}+{pos_y}")
 
         self.targets_dir = "targets"
+        self.settings_file = "settings.json"
         os.makedirs(self.targets_dir, exist_ok=True)
 
         # steps[i] = list of PIL Images; any match in step i triggers click → advance to step i+1
         self.steps: list[list] = [[]]
+        self.profile_chain: list[str] = []  # track loaded/appended profile names
         self._capture_target_step = 0
         self.running = False
         self.worker_thread: typing.Any = None
+        self.last_click_x: typing.Optional[int] = None
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -108,38 +113,44 @@ class AutoClickerApp(ctk.CTk):
         self.action_var = ctk.StringVar(value="Left Click")
         ctk.CTkOptionMenu(
             ctrl, values=["Left Click", "Right Click", "Double Click", "Move Only"],
-            variable=self.action_var
+            variable=self.action_var, command=lambda _: self.save_settings()
         ).grid(row=0, column=1, padx=10, pady=6, sticky="ew")
 
-        self.lbl_conf = ctk.CTkLabel(ctrl, text="Confidence: 75%")
+        self.lbl_conf = ctk.CTkLabel(ctrl, text="Confidence: 100%")
         self.lbl_conf.grid(row=1, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
         self.conf_slider = ctk.CTkSlider(ctrl, from_=0.1, to=1.0, command=self.update_conf_lbl)
-        self.conf_slider.set(0.75)
+        self.conf_slider.set(1.0)
         self.conf_slider.grid(row=2, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
 
-        self.lbl_min_conf = ctk.CTkLabel(ctrl, text="Min Confidence (fallback): 50%")
+        self.lbl_min_conf = ctk.CTkLabel(ctrl, text="Min Confidence (fallback): 90%")
         self.lbl_min_conf.grid(row=3, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
         self.min_conf_slider = ctk.CTkSlider(ctrl, from_=0.1, to=1.0, command=self.update_min_conf_lbl)
-        self.min_conf_slider.set(0.50)
+        self.min_conf_slider.set(0.90)
         self.min_conf_slider.grid(row=4, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
 
-        self.lbl_delay = ctk.CTkLabel(ctrl, text="Delay after click: 0.5s")
+        self.lbl_delay = ctk.CTkLabel(ctrl, text="Delay after click: 1.5s")
         self.lbl_delay.grid(row=5, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
         self.delay_slider = ctk.CTkSlider(ctrl, from_=0.0, to=5.0, command=self.update_delay_lbl)
-        self.delay_slider.set(0.5)
+        self.delay_slider.set(1.5)
         self.delay_slider.grid(row=6, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
 
-        self.lbl_interval = ctk.CTkLabel(ctrl, text="Check interval: 0.1s")
+        self.lbl_interval = ctk.CTkLabel(ctrl, text="Check interval: 2.00s")
         self.lbl_interval.grid(row=7, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
         self.interval_slider = ctk.CTkSlider(ctrl, from_=0.0, to=2.0, command=self.update_interval_lbl)
-        self.interval_slider.set(0.1)
+        self.interval_slider.set(2.0)
         self.interval_slider.grid(row=8, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
 
-        self.lbl_scroll = ctk.CTkLabel(ctrl, text="Scroll after click: 0")
+        self.lbl_scroll = ctk.CTkLabel(ctrl, text="No-match scroll amt: 0")
         self.lbl_scroll.grid(row=9, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
         self.scroll_slider = ctk.CTkSlider(ctrl, from_=-1000, to=1000, command=self.update_scroll_lbl)
         self.scroll_slider.set(0)
         self.scroll_slider.grid(row=10, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
+
+        self.lbl_scroll_before = ctk.CTkLabel(ctrl, text="Scroll before search: 0")
+        self.lbl_scroll_before.grid(row=11, column=0, columnspan=2, padx=10, pady=(6, 0), sticky="w")
+        self.scroll_before_slider = ctk.CTkSlider(ctrl, from_=-1000, to=1000, command=self.update_scroll_before_lbl)
+        self.scroll_before_slider.set(0)
+        self.scroll_before_slider.grid(row=12, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
 
         # ── Profile Buttons ───────────────────────────────────────────
         pf = ctk.CTkFrame(self, fg_color="transparent")
@@ -154,43 +165,94 @@ class AutoClickerApp(ctk.CTk):
         ctk.CTkButton(pf, text="➕ Append", fg_color="#28a745", hover_color="#218838",
                       command=self.append_profile).grid(row=0, column=2, padx=(3, 0), sticky="ew")
 
+        # ── Profile Flow Indicator ────────────────────────────────────
+        self.lbl_flow = ctk.CTkLabel(self, text="", text_color="#4fc3f7",
+                                      font=("Arial", 12, "bold"), wraplength=460, justify="left")
+
         # ── Hotkeys / Start / Status ──────────────────────────────────
         ctk.CTkLabel(
             self, text="[Ctrl+Shift+P] Start  |  [Ctrl+Shift+Q] Stop",
             font=("Arial", 12, "bold")
-        ).grid(row=4, column=0, pady=5)
+        ).grid(row=5, column=0, pady=5)
 
         self.btn_start = ctk.CTkButton(
             self, text="▶ Start [Ctrl+Shift+P]",
             fg_color="green", hover_color="darkgreen", height=40,
             command=self.toggle_start
         )
-        self.btn_start.grid(row=5, column=0, padx=10, pady=5, sticky="ew")
+        self.btn_start.grid(row=6, column=0, padx=10, pady=5, sticky="ew")
 
         self.lbl_status = ctk.CTkLabel(self, text="Status: Ready", text_color="gray")
-        self.lbl_status.grid(row=6, column=0, padx=10, pady=(3, 10))
+        self.lbl_status.grid(row=7, column=0, padx=10, pady=(3, 10))
 
         keyboard.add_hotkey("ctrl+shift+p", lambda: self.after(0, self.start_auto))
         keyboard.add_hotkey("ctrl+shift+q", lambda: self.after(0, self.stop_auto))
 
+        self.load_settings()
         self.load_target_images()
         self.rebuild_steps_ui()
 
+    # ── Settings persistence ──────────────────────────────────────────
+    def save_settings(self):
+        settings = {
+            "action": self.action_var.get(),
+            "confidence": round(self.conf_slider.get(), 2),
+            "min_confidence": round(self.min_conf_slider.get(), 2),
+            "delay": round(self.delay_slider.get(), 2),
+            "interval": round(self.interval_slider.get(), 2),
+            "scroll": int(self.scroll_slider.get()),
+            "scroll_before": int(self.scroll_before_slider.get()),
+        }
+        try:
+            with open(self.settings_file, "w") as f:
+                json.dump(settings, f)
+        except Exception:
+            pass
+
+    def load_settings(self):
+        try:
+            with open(self.settings_file, "r") as f:
+                s = json.load(f)
+            self.action_var.set(s.get("action", "Left Click"))
+            self.conf_slider.set(s.get("confidence", 1.0))
+            self.update_conf_lbl(self.conf_slider.get())
+            self.min_conf_slider.set(s.get("min_confidence", 0.90))
+            self.update_min_conf_lbl(self.min_conf_slider.get())
+            self.delay_slider.set(s.get("delay", 1.5))
+            self.update_delay_lbl(self.delay_slider.get())
+            self.interval_slider.set(s.get("interval", 2.0))
+            self.update_interval_lbl(self.interval_slider.get())
+            self.scroll_slider.set(s.get("scroll", 0))
+            self.update_scroll_lbl(self.scroll_slider.get())
+            self.scroll_before_slider.set(s.get("scroll_before", 0))
+            self.update_scroll_before_lbl(self.scroll_before_slider.get())
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+
     # ── Slider callbacks ──────────────────────────────────────────────
     def update_conf_lbl(self, value):
-        self.lbl_conf.configure(text=f"Confidence: {int(value * 100)}%")
+        self.lbl_conf.configure(text=f"Confidence: {int(float(value) * 100)}%")
+        self.save_settings()
 
     def update_min_conf_lbl(self, value):
-        self.lbl_min_conf.configure(text=f"Min Confidence (fallback): {int(value * 100)}%")
+        self.lbl_min_conf.configure(text=f"Min Confidence (fallback): {int(float(value) * 100)}%")
+        self.save_settings()
 
     def update_delay_lbl(self, value):
-        self.lbl_delay.configure(text=f"Delay after click: {value:.1f}s")
+        self.lbl_delay.configure(text=f"Delay after click: {float(value):.1f}s")
+        self.save_settings()
 
     def update_interval_lbl(self, value):
-        self.lbl_interval.configure(text=f"Check interval: {value:.2f}s")
+        self.lbl_interval.configure(text=f"Check interval: {float(value):.2f}s")
+        self.save_settings()
 
     def update_scroll_lbl(self, value):
-        self.lbl_scroll.configure(text=f"Scroll after click: {int(value)}")
+        self.lbl_scroll.configure(text=f"No-match scroll amt: {int(float(value))}")
+        self.save_settings()
+
+    def update_scroll_before_lbl(self, value):
+        self.lbl_scroll_before.configure(text=f"Scroll before search: {int(float(value))}")
+        self.save_settings()
 
     # ── Step management ───────────────────────────────────────────────
     def add_step(self):
@@ -362,6 +424,14 @@ class AutoClickerApp(ctk.CTk):
                     row=step_idx * 2 + 1, column=0, pady=2
                 )
 
+    # ── Profile flow display ────────────────────────────────────────────
+    def update_flow_label(self):
+        if not self.profile_chain:
+            self.lbl_flow.grid_forget()
+        else:
+            self.lbl_flow.configure(text="📋 " + "  →  ".join(self.profile_chain))
+            self.lbl_flow.grid(row=4, column=0, padx=10, pady=(0, 3), sticky="ew")
+
     # ── Load / Save / Clear ───────────────────────────────────────────
     def load_target_images(self):
         self.steps = []
@@ -390,6 +460,7 @@ class AutoClickerApp(ctk.CTk):
 
     def clear_all(self):
         self.steps = [[]]
+        self.profile_chain = []
         try:
             for f in os.listdir(self.targets_dir):
                 if f.endswith(".png"):
@@ -428,7 +499,10 @@ class AutoClickerApp(ctk.CTk):
                         zf.extract(member, self.targets_dir)
                 self.load_target_images()
                 self.rebuild_steps_ui()
-                self.lbl_status.configure(text=f"Loaded: {os.path.basename(filepath)}", text_color="green")
+                name = os.path.basename(filepath)
+                self.profile_chain = [name]
+                self.update_flow_label()
+                self.lbl_status.configure(text=f"Loaded: {name}", text_color="green")
             except Exception as e:
                 self.lbl_status.configure(text=f"Load error: {e}", text_color="red")
 
@@ -469,7 +543,10 @@ class AutoClickerApp(ctk.CTk):
 
                 self.load_target_images()
                 self.rebuild_steps_ui()
-                self.lbl_status.configure(text=f"Appended: {os.path.basename(filepath)}", text_color="green")
+                name = os.path.basename(filepath)
+                self.profile_chain.append(name)
+                self.update_flow_label()
+                self.lbl_status.configure(text=f"Appended: {name}", text_color="green")
             except Exception as e:
                 self.lbl_status.configure(text=f"Append error: {e}", text_color="red")
 
@@ -490,7 +567,7 @@ class AutoClickerApp(ctk.CTk):
         self.btn_start.configure(text="⏹ Stop [Ctrl+Shift+Q]", fg_color="red", hover_color="darkred")
         self.lbl_status.configure(text="Status: RUNNING — Step 1", text_color="green")
         self.title("[RUNNING] Auto Image Clicker")
-        # Removing iconify to keep the window visible on the left side
+        self.iconify()
         self.worker_thread = threading.Thread(target=self.auto_loop, daemon=True)
         self.worker_thread.start()
 
@@ -501,7 +578,7 @@ class AutoClickerApp(ctk.CTk):
         self.btn_start.configure(text="▶ Start [Ctrl+Shift+P]", fg_color="green", hover_color="darkgreen")
         self.lbl_status.configure(text="Status: Stopped", text_color="gray")
         self.title("Auto Image Clicker - Hierarchical")
-        # Removed deiconify since it's no longer minimized during play
+        self.deiconify()
 
     # ── Auto Loop ─────────────────────────────────────────────────────
     def auto_loop(self):
@@ -515,11 +592,16 @@ class AutoClickerApp(ctk.CTk):
                 action = str(self.action_var.get())
                 delay = float(self.delay_slider.get())
                 scroll_amt = int(self.scroll_slider.get())
+                scroll_before_amt = int(self.scroll_before_slider.get())
             except Exception:
                 time.sleep(0.1)
                 continue
 
             time.sleep(interval)
+
+            if scroll_before_amt != 0:
+                pyautogui.scroll(scroll_before_amt)
+                time.sleep(0.3)
 
             # Ensure min_conf <= conf
             min_conf = min(min_conf, conf)
@@ -556,8 +638,7 @@ class AutoClickerApp(ctk.CTk):
                             elif action == "Move Only":
                                 pyautogui.moveTo(center.x, center.y)
 
-                            if scroll_amt != 0:
-                                pyautogui.scroll(scroll_amt)
+                            self.last_click_x = center.x
 
                             next_step = (current_step + 1) % total
                             used_pct = int(try_conf * 100)
@@ -580,6 +661,12 @@ class AutoClickerApp(ctk.CTk):
                     try_conf = round(try_conf - 0.05, 2)
                     if try_conf < min_conf:
                         break
+
+            if not matched and scroll_amt != 0 and self.last_click_x is not None:
+                screen_center_y = pyautogui.size().height // 2
+                pyautogui.moveTo(self.last_click_x, screen_center_y)
+                pyautogui.scroll(scroll_amt)
+                time.sleep(0.3)
 
 
 if __name__ == "__main__":
