@@ -98,6 +98,11 @@ class AutoClickerApp(ctk.CTk):
         super().__init__()
         self.title("Auto Image Clicker - Hierarchical")
 
+        # Set window icon
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_icon.ico")
+        if os.path.exists(icon_path):
+            self.iconbitmap(icon_path)
+
         self.update_idletasks()
         window_width = 490
         window_height = 980

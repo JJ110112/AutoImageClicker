@@ -23,6 +23,7 @@ cmd = [
     sys.executable, "-m", "PyInstaller",
     "--noconsole",
     "--onefile",
+    "--icon", "app_icon.ico",
     "--name", "AutoImageClicker",
     "main.py"
 ]
