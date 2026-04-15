@@ -414,6 +414,67 @@ class AutoClickerApp(ctk.CTk):
         self.steps[step_idx].append(img)
         self.rebuild_steps_ui()
 
+    # ── Test Image ────────────────────────────────────────────────────
+    def test_image(self, step_idx, img_idx):
+        img = self.steps[step_idx][img_idx]
+        conf = float(self.conf_slider.get())
+        min_conf = float(self.min_conf_slider.get())
+        min_conf = min(min_conf, conf)
+
+        self.iconify()
+        self.after(400, lambda: self._perform_test(img, conf, min_conf))
+
+    def _perform_test(self, img, conf, min_conf):
+        try_conf = conf
+        found_loc = None
+        found_conf = 0
+        while try_conf >= min_conf - 0.001:
+            try:
+                loc = pyautogui.locateOnScreen(img, confidence=try_conf, grayscale=False)
+                if loc:
+                    found_loc = loc
+                    found_conf = int(try_conf * 100)
+                    break
+            except getattr(pyautogui, 'ImageNotFoundException', Exception):
+                pass
+            except Exception as e:
+                print("Test locate error:", e)
+                break
+            try_conf = round(try_conf - 0.05, 2)
+
+        if found_loc:
+            self.show_test_result_overlay(found_loc, True)
+            self.after(1500, self.deiconify)
+            self.lbl_status.configure(text=f"Test Success: Found at {found_loc} (conf {found_conf}%)", text_color="green")
+        else:
+            self.show_test_result_overlay(None, False)
+            self.after(1500, self.deiconify)
+            self.lbl_status.configure(text=f"Test Failed: Image not found (min conf {int(min_conf*100)}%).", text_color="red")
+
+    def show_test_result_overlay(self, rect, success):
+        overlay = tk.Toplevel(self)
+        overlay.overrideredirect(True)
+        overlay.attributes('-topmost', True)
+        overlay.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}+0+0")
+        try:
+            overlay.wm_attributes("-transparentcolor", "black")
+        except Exception:
+            pass
+        overlay.config(bg='black')
+
+        canvas = tk.Canvas(overlay, bg='black', highlightthickness=0)
+        canvas.pack(fill='both', expand=True)
+
+        if success and rect is not None:
+            x, y, w, h = rect
+            canvas.create_rectangle(x, y, x+w, y+h, outline="#00ff00", width=4)
+            canvas.create_text(x + w//2, max(20, y - 20), text="Match Found!", fill="#00ff00", font=("Arial", 20, "bold"))
+        else:
+            sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+            canvas.create_text(sw//2, sh//2, text="Image Not Found", fill="#ff0000", font=("Arial", 40, "bold"))
+
+        self.after(1500, overlay.destroy)
+
     # ── UI rebuild ────────────────────────────────────────────────────
     def rebuild_steps_ui(self):
         for w in self.steps_scroll.winfo_children():
@@ -480,6 +541,10 @@ class AutoClickerApp(ctk.CTk):
 
                     ctk.CTkButton(actions_frame, text="◀", width=20, height=20, fg_color="#555", font=("Arial", 10),
                                   command=lambda si=step_idx, ii=img_idx: self.move_image(si, ii, -1)).pack(side="left", padx=1)
+                    btn_test = ctk.CTkButton(actions_frame, text="🔍", width=20, height=20, fg_color="#0052cc", font=("Arial", 10),
+                                  command=lambda si=step_idx, ii=img_idx: self.test_image(si, ii))
+                    btn_test.pack(side="left", padx=1)
+                    ToolTip(btn_test, "測試此圖片是否能在當前螢幕上找到")
                     ctk.CTkButton(actions_frame, text="▶", width=20, height=20, fg_color="#555", font=("Arial", 10),
                                   command=lambda si=step_idx, ii=img_idx: self.move_image(si, ii, 1)).pack(side="left", padx=1)
 
