@@ -235,8 +235,32 @@ class AutoClickerApp(ctk.CTk):
         self.btn_start.grid(row=6, column=0, padx=10, pady=5, sticky="ew")
         ToolTip(self.btn_start, "開始/停止自動辨識點擊\n快捷鍵：Ctrl+Shift+F1 開始、Ctrl+Shift+F2 停止\n啟動後視窗會自動最小化")
 
-        self.lbl_status = ctk.CTkLabel(self, text="Status: Ready", text_color="gray")
-        self.lbl_status.grid(row=7, column=0, padx=10, pady=(3, 10))
+        # ── Status Bar (bottom) ───────────────────────────────────────
+        self.status_bar = ctk.CTkFrame(
+            self, height=34, corner_radius=0,
+            fg_color=("#e0e0e0", "#1f1f1f")
+        )
+        self.status_bar.grid(row=7, column=0, sticky="ew", pady=(8, 0))
+        self.status_bar.grid_columnconfigure(1, weight=1)
+        self.status_bar.grid_propagate(False)
+
+        self.status_dot = ctk.CTkLabel(
+            self.status_bar, text="●", width=18,
+            text_color="gray", font=("Arial", 16, "bold")
+        )
+        self.status_dot.grid(row=0, column=0, padx=(10, 4), pady=4, sticky="w")
+
+        self.lbl_status = ctk.CTkLabel(
+            self.status_bar, text="Ready", text_color="gray",
+            font=("Microsoft JhengHei", 11), anchor="w"
+        )
+        self.lbl_status.grid(row=0, column=1, sticky="ew", padx=4, pady=4)
+
+        self.lbl_status_detail = ctk.CTkLabel(
+            self.status_bar, text="", text_color=("#666", "#999"),
+            font=("Microsoft JhengHei", 10), anchor="e"
+        )
+        self.lbl_status_detail.grid(row=0, column=2, sticky="e", padx=(4, 10), pady=4)
 
         keyboard.add_hotkey("ctrl+shift+f1", lambda: self.after(0, self.start_auto))
         keyboard.add_hotkey("ctrl+shift+f2", lambda: self.after(0, self.stop_auto))
@@ -244,6 +268,18 @@ class AutoClickerApp(ctk.CTk):
         self.load_settings()
         self.load_target_images()
         self.rebuild_steps_ui()
+
+    # ── Status bar helper ─────────────────────────────────────────────
+    def set_status(self, text, color="gray", detail=None, dot_color=None):
+        """Update the bottom status bar. Call only from the main thread."""
+        self.lbl_status.configure(text=text, text_color=color)
+        if detail is not None:
+            self.lbl_status_detail.configure(text=detail)
+        self.status_dot.configure(text_color=dot_color or color)
+
+    def post_status(self, text, color="gray", detail=None, dot_color=None):
+        """Thread-safe wrapper around set_status."""
+        self.after(0, lambda: self.set_status(text, color, detail, dot_color))
 
     # ── Settings persistence ──────────────────────────────────────────
     def save_settings(self):
@@ -445,11 +481,17 @@ class AutoClickerApp(ctk.CTk):
         if found_loc:
             self.show_test_result_overlay(found_loc, True)
             self.after(1500, self.deiconify)
-            self.lbl_status.configure(text=f"Test Success: Found at {found_loc} (conf {found_conf}%)", text_color="green")
+            self.set_status(
+                "✓ Test Success: image matched", "#22c55e",
+                detail=f"{found_loc}  conf {found_conf}%"
+            )
         else:
             self.show_test_result_overlay(None, False)
             self.after(1500, self.deiconify)
-            self.lbl_status.configure(text=f"Test Failed: Image not found (min conf {int(min_conf*100)}%).", text_color="red")
+            self.set_status(
+                "✗ Test Failed: image not found", "#ef4444",
+                detail=f"min conf {int(min_conf*100)}%"
+            )
 
     def show_test_result_overlay(self, rect, success):
         overlay = tk.Toplevel(self)
@@ -609,7 +651,7 @@ class AutoClickerApp(ctk.CTk):
 
     def save_profile(self):
         if not any(self.steps):
-            self.lbl_status.configure(text="No targets to save.", text_color="red")
+            self.set_status("No targets to save.", "#ef4444", detail="")
             return
         filepath = ctk.filedialog.asksaveasfilename(  # type: ignore
             defaultextension=".zip", filetypes=[("Scenario Zip", "*.zip")], title="Save Profile")
@@ -619,9 +661,9 @@ class AutoClickerApp(ctk.CTk):
                     for f in os.listdir(self.targets_dir):
                         if f.endswith(".png"):
                             zf.write(os.path.join(self.targets_dir, f), f)
-                self.lbl_status.configure(text=f"Saved: {os.path.basename(filepath)}", text_color="green")
+                self.set_status(f"💾 Saved: {os.path.basename(filepath)}", "#22c55e", detail="")
             except Exception as e:
-                self.lbl_status.configure(text=f"Save error: {e}", text_color="red")
+                self.set_status(f"Save error: {e}", "#ef4444", detail="")
 
     def load_profile(self):
         filepath = ctk.filedialog.askopenfilename(  # type: ignore
@@ -640,9 +682,9 @@ class AutoClickerApp(ctk.CTk):
                 name = os.path.basename(filepath)
                 self.profile_chain = [name]
                 self.update_flow_label()
-                self.lbl_status.configure(text=f"Loaded: {name}", text_color="green")
+                self.set_status(f"📂 Loaded: {name}", "#22c55e", detail="")
             except Exception as e:
-                self.lbl_status.configure(text=f"Load error: {e}", text_color="red")
+                self.set_status(f"Load error: {e}", "#ef4444", detail="")
 
     def append_profile(self):
         filepath = ctk.filedialog.askopenfilename(  # type: ignore
@@ -684,9 +726,9 @@ class AutoClickerApp(ctk.CTk):
                 name = os.path.basename(filepath)
                 self.profile_chain.append(name)
                 self.update_flow_label()
-                self.lbl_status.configure(text=f"Appended: {name}", text_color="green")
+                self.set_status(f"➕ Appended: {name}", "#22c55e", detail="")
             except Exception as e:
-                self.lbl_status.configure(text=f"Append error: {e}", text_color="red")
+                self.set_status(f"Append error: {e}", "#ef4444", detail="")
 
     # ── Start / Stop ──────────────────────────────────────────────────
     def toggle_start(self):
@@ -699,11 +741,11 @@ class AutoClickerApp(ctk.CTk):
         if self.running:
             return
         if not any(self.steps):
-            self.lbl_status.configure(text="Please capture at least one target.", text_color="red")
+            self.set_status("Please capture at least one target.", "#ef4444", detail="")
             return
         self.running = True
         self.btn_start.configure(text="⏹ Stop [Ctrl+Shift+F2]", fg_color="red", hover_color="darkred")
-        self.lbl_status.configure(text="Status: RUNNING — Step 1", text_color="green")
+        self.set_status("● RUNNING — Step 1", "#22c55e", detail="starting…")
         self.title("[RUNNING] Auto Image Clicker")
         self.iconify()
         self.worker_thread = threading.Thread(target=self.auto_loop, daemon=True)
@@ -714,7 +756,7 @@ class AutoClickerApp(ctk.CTk):
             return
         self.running = False
         self.btn_start.configure(text="▶ Start [Ctrl+Shift+F1]", fg_color="green", hover_color="darkgreen")
-        self.lbl_status.configure(text="Status: Stopped", text_color="gray")
+        self.set_status("■ Stopped", "gray", detail="")
         self.title("Auto Image Clicker - Hierarchical")
         self.deiconify()
 
@@ -744,6 +786,11 @@ class AutoClickerApp(ctk.CTk):
                 break
 
             if scroll_before_amt != 0:
+                self.post_status(
+                    f"⤴ Pre-scroll before search",
+                    "#fbbf24",
+                    detail=self._scroll_display(scroll_before_amt),
+                )
                 pyautogui.scroll(scroll_before_amt)
                 time.sleep(0.3)
                 if not self.running:
@@ -764,13 +811,26 @@ class AutoClickerApp(ctk.CTk):
                 current_step = (current_step + 1) % total
                 continue
 
+            self.post_status(
+                f"🔍 偵測中 Step {current_step + 1}/{total}",
+                "#fbbf24",
+                detail=f"{len(step_images)} image(s)  conf {int(conf*100)}%→{int(min_conf*100)}%",
+            )
+
             matched = False
-            for img in step_images:
+            for img_idx, img in enumerate(step_images):
                 if matched:
                     break
                 # Try confidence from max down to min_conf in steps of 5%
                 try_conf = conf
                 while try_conf >= min_conf - 0.001:
+                    if not self.running:
+                        break
+                    self.post_status(
+                        f"🔍 Step {current_step + 1} · img {img_idx + 1}/{len(step_images)}",
+                        "#fbbf24",
+                        detail=f"trying conf {int(try_conf*100)}%",
+                    )
                     try:
                         loc = pyautogui.locateOnScreen(img, confidence=try_conf, grayscale=False)
                         if loc:
@@ -788,11 +848,11 @@ class AutoClickerApp(ctk.CTk):
 
                             next_step = (current_step + 1) % total
                             used_pct = int(try_conf * 100)
-                            self.after(0, lambda s=current_step, ns=next_step, cx=center.x, cy=center.y, p=used_pct:
-                                       self.lbl_status.configure(
-                                           text=f"Step {s+1} ✓ (conf {p}%)  →  waiting Step {ns+1} | X:{cx} Y:{cy}",
-                                           text_color="green"
-                                       ))
+                            self.post_status(
+                                f"✓ Step {current_step + 1} matched → Step {next_step + 1}",
+                                "#22c55e",
+                                detail=f"X:{center.x} Y:{center.y}  conf {used_pct}%",
+                            )
 
                             time.sleep(delay)
                             current_step = next_step
@@ -808,11 +868,23 @@ class AutoClickerApp(ctk.CTk):
                     if try_conf < min_conf:
                         break
 
-            if not matched and self.running and scroll_amt != 0 and self.last_click_x is not None:
-                screen_center_y = pyautogui.size().height // 2
-                pyautogui.moveTo(self.last_click_x, screen_center_y)
-                pyautogui.scroll(scroll_amt)
-                time.sleep(0.3)
+            if not matched and self.running:
+                if scroll_amt != 0 and self.last_click_x is not None:
+                    self.post_status(
+                        f"✗ Step {current_step + 1} 未找到，捲動重試",
+                        "#ef4444",
+                        detail=self._scroll_display(scroll_amt),
+                    )
+                    screen_center_y = pyautogui.size().height // 2
+                    pyautogui.moveTo(self.last_click_x, screen_center_y)
+                    pyautogui.scroll(scroll_amt)
+                    time.sleep(0.3)
+                else:
+                    self.post_status(
+                        f"✗ Step {current_step + 1} 未找到，重試中",
+                        "#ef4444",
+                        detail=f"min conf {int(min_conf*100)}%",
+                    )
 
 
 if __name__ == "__main__":
